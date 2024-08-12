@@ -178,7 +178,7 @@ func (s *Server) HandlerConn(conn *websocket.Conn) {
 
 func (s *Server) Start() {
 
-	http.HandleFunc("/ws", s.ServerWs)
+	http.HandleFunc("/", s.ServerWs)
 
 	fmt.Println("start ws")
 
