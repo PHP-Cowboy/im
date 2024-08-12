@@ -1,0 +1,15 @@
+{
+  "port": 1234,
+  "mysqlInfo": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "name": "weshow",
+    "user": "root",
+    "password": "root"
+  },
+  "jwtInfo": {
+    "key": "khjiuhjoihlkjk",
+    "expiresHour": 2,
+    "addHour": 2
+  }
+}
