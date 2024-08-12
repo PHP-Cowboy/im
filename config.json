@@ -11,5 +11,8 @@
     "key": "khjiuhjoihlkjk",
     "expiresHour": 2,
     "addHour": 2
-  }
+  },
+	"wsInfo": {
+		"maxConnectionIdle":10
+	}
 }

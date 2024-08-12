@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"im/global"
 	"log"
 	"net/http"
 	"sync"
@@ -16,8 +17,8 @@ type Server struct {
 
 	authentication Authentication
 
-	ConnToUserMp map[*websocket.Conn]string
-	UserToConnMp map[string]*websocket.Conn
+	ConnToUserMp map[*Conn]string
+	UserToConnMp map[string]*Conn
 
 	Upgrader websocket.Upgrader
 }
@@ -27,30 +28,35 @@ func NewServer(addr string) *Server {
 		Routes:         make(map[string]HandleFunc),
 		Addr:           addr,
 		authentication: Authentication{},
-		ConnToUserMp:   make(map[*websocket.Conn]string),
-		UserToConnMp:   make(map[string]*websocket.Conn),
+		ConnToUserMp:   make(map[*Conn]string),
+		UserToConnMp:   make(map[string]*Conn),
 		Upgrader:       websocket.Upgrader{},
 	}
 }
 
-func (s *Server) AddConn(conn *websocket.Conn, r *http.Request) {
+func (s *Server) AddConn(conn *Conn, r *http.Request) {
 	uid := s.authentication.GetUid(r)
 
 	s.RWMutex.Lock()
 	defer s.RWMutex.Unlock()
 
+	// 原有已经存在了连接
+	if c := s.UserToConnMp[uid]; c != nil {
+		c.Close()
+	}
+
 	s.ConnToUserMp[conn] = uid
 	s.UserToConnMp[uid] = conn
 }
 
-func (s *Server) GetConn(uid string) *websocket.Conn {
+func (s *Server) GetConn(uid string) *Conn {
 	s.RWMutex.RLock()
 	defer s.RWMutex.RUnlock()
 
 	return s.UserToConnMp[uid]
 }
 
-func (s *Server) GetUsers(conns ...*websocket.Conn) []string {
+func (s *Server) GetUsers(conns ...*Conn) []string {
 
 	s.RWMutex.RLock()
 	defer s.RWMutex.RUnlock()
@@ -73,15 +79,22 @@ func (s *Server) GetUsers(conns ...*websocket.Conn) []string {
 	return res
 }
 
-func (s *Server) Close(conn *websocket.Conn) {
-	conn.Close()
+// 关闭链接
+func (s *Server) Close(conn *Conn) {
 
 	s.RWMutex.Lock()
 	defer s.RWMutex.Unlock()
 
 	uid := s.ConnToUserMp[conn]
+	if uid == "" {
+		// 已经关闭了连接
+		return
+	}
+
 	delete(s.ConnToUserMp, conn)
 	delete(s.UserToConnMp, uid)
+
+	conn.Close()
 }
 
 func (s *Server) SendByUserIds(msg interface{}, userIds ...string) error {
@@ -89,7 +102,7 @@ func (s *Server) SendByUserIds(msg interface{}, userIds ...string) error {
 		return nil
 	}
 
-	connList := make([]*websocket.Conn, 0, len(userIds))
+	connList := make([]*Conn, 0, len(userIds))
 
 	for _, id := range userIds {
 		connList = append(connList, s.GetConn(id))
@@ -98,7 +111,7 @@ func (s *Server) SendByUserIds(msg interface{}, userIds ...string) error {
 	return s.Send(msg, connList...)
 }
 
-func (s *Server) Send(msg interface{}, conns ...*websocket.Conn) error {
+func (s *Server) Send(msg interface{}, conns ...*Conn) error {
 	if len(conns) == 0 {
 		return nil
 	}
@@ -131,48 +144,53 @@ func (s *Server) ServerWs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	conn, err := s.Upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("upgrade err:%v", err)
-		return
-	}
+	conn := NewConn(s, w, r)
 
 	if !s.authentication.Auth(w, r) {
-		err = conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("鉴权不通过")))
+
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("鉴权不通过"))); err != nil {
+			global.Logger["err"].Error(err.Error())
+		}
+
 		return
 	}
 
 	//记录链接
 	s.AddConn(conn, r)
 
-	go s.HandlerConn(conn)
+	go s.handlerConn(conn)
 }
 
-func (s *Server) HandlerConn(conn *websocket.Conn) {
+func (s *Server) handlerConn(conn *Conn) {
+	// 记录连接
 	for {
-		_, message, err := conn.ReadMessage()
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
+			// 关闭并删除连接
 			s.Close(conn)
 			return
 		}
 
-		var msg Message
+		// 请求信息
+		var message Message
+		json.Unmarshal(msg, &message)
 
-		if err = json.Unmarshal(message, &msg); err != nil {
-			s.Close(conn)
-			return
-		}
-
-		if handle, ok := s.Routes[msg.Method]; ok {
-			handle(s, conn, &msg)
-		} else {
-			err = conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("不存在的method:%v,请检查", msg.Method)))
-			if err != nil {
-				log.Println("write:", err)
-				break
+		// 依据请求消息类型分类处理
+		switch message.FrameType {
+		case FramePing:
+			// ping：回复
+			s.Send(&Message{FrameType: FramePing}, conn)
+		case FrameData:
+			// 处理
+			if handler, ok := s.Routes[message.Method]; ok {
+				handler(s, conn, &message)
+			} else {
+				s.Send(&Message{
+					FrameType: FrameData,
+					Data:      fmt.Sprintf("不存在请求方法 %v 请仔细检查", message.Method),
+				}, conn)
 			}
 		}
-
 	}
 }
 
@@ -184,7 +202,7 @@ func (s *Server) Start() {
 
 	err := http.ListenAndServe(s.Addr, nil)
 	if err != nil {
-		fmt.Printf("http.ListenAndServe failed: %v", err.Error())
+		global.Logger["err"].Errorf("http.ListenAndServe failed: %v", err.Error())
 		return
 	}
 }

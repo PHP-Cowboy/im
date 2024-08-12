@@ -11,7 +11,7 @@ func main() {
 
 	initialize.InitConfig()
 
-	initialize.InitMysql()
+	//initialize.InitMysql()
 
 	s := ws.NewServer("127.0.0.1:1234")
 

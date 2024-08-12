@@ -2,6 +2,7 @@ package config
 
 type ServerConfig struct {
 	Port      int         `json:"port"`
+	WsInfo    WsConfig    `json:"wsInfo"`
 	MysqlInfo MysqlConfig `json:"mysqlInfo"`
 	JwtInfo   JWTConfig   `json:"jwtInfo"`
 }
@@ -18,4 +19,8 @@ type JWTConfig struct {
 	SigningKey  string `json:"key"`
 	ExpiresHour int    `json:"expiresHour"`
 	AddHour     int    `json:"addHour"`
+}
+
+type WsConfig struct {
+	MaxConnectionIdle int `json:"maxConnectionIdle"`
 }
