@@ -74,7 +74,6 @@ func (c *Conn) keepalive() {
 func (c *Conn) ReadMessage() (messageType int, p []byte, err error) {
 	messageType, p, err = c.Conn.ReadMessage()
 	c.idle = time.Time{}
-	time.Now()
 	return
 }
 
