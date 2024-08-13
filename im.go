@@ -13,6 +13,8 @@ func main() {
 
 	//initialize.InitMysql()
 
+	initialize.InitRedis()
+
 	s := ws.NewServer("127.0.0.1:1234")
 
 	handler.RegisterHandlers(s)

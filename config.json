@@ -1,18 +1,26 @@
 {
-  "port": 1234,
-  "mysqlInfo": {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "name": "weshow",
-    "user": "root",
-    "password": "root"
-  },
-  "jwtInfo": {
-    "key": "khjiuhjoihlkjk",
-    "expiresHour": 2,
-    "addHour": 2
-  },
-	"wsInfo": {
-		"maxConnectionIdle":10
-	}
+    "port": 1234,
+    "mysqlInfo": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "name": "weshow",
+        "user": "root",
+        "password": "root"
+    },
+    "redis":{
+        "host": "192.168.0.254",
+        "port": 6379,
+        "expire": 1,
+        "db": 2,
+        "username": "",
+        "password": ""
+    },
+    "jwtInfo": {
+        "key": "p#gRRwPZ0Fx#l_HoNDm",
+        "expiresHour": 2,
+        "addHour": 2
+    },
+    "wsInfo": {
+        "maxConnectionIdle": 10
+    }
 }

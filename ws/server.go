@@ -118,11 +118,13 @@ func (s *Server) Send(msg interface{}, conns ...*Conn) error {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
+		global.Logger["err"].Errorf("JSON parsing failed, err: %v ", err.Error())
 		return err
 	}
 
 	for _, conn := range conns {
 		if err = conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			global.Logger["err"].Errorf("WriteMessage failed, err: %v ", err.Error())
 			return err
 		}
 	}
@@ -173,13 +175,26 @@ func (s *Server) handlerConn(conn *Conn) {
 
 		// 请求信息
 		var message Message
-		json.Unmarshal(msg, &message)
+		err = json.Unmarshal(msg, &message)
+		if err != nil {
+			s.Send(&Message{
+				FrameType: FrameData,
+				Data:      fmt.Sprintf("消息解析失败"),
+			}, conn)
+
+			global.Logger["err"].Errorf("消息解析失败:%v", err.Error())
+
+			return
+		}
 
 		// 依据请求消息类型分类处理
 		switch message.FrameType {
 		case FramePing:
 			// ping：回复
-			s.Send(&Message{FrameType: FramePing}, conn)
+			if err = s.Send(&Message{FrameType: FramePing}, conn); err != nil {
+				global.Logger["err"].Errorf("ping：回复 failed, err: %v ", err.Error())
+				return
+			}
 		case FrameData:
 			// 处理
 			if handler, ok := s.Routes[message.Method]; ok {
@@ -189,6 +204,8 @@ func (s *Server) handlerConn(conn *Conn) {
 					FrameType: FrameData,
 					Data:      fmt.Sprintf("不存在请求方法 %v 请仔细检查", message.Method),
 				}, conn)
+
+				global.Logger["err"].Errorf("不存在请求方法 %v 请仔细检查", message.Method)
 			}
 		}
 	}

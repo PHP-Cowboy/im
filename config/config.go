@@ -2,9 +2,10 @@ package config
 
 type ServerConfig struct {
 	Port      int         `json:"port"`
-	WsInfo    WsConfig    `json:"wsInfo"`
 	MysqlInfo MysqlConfig `json:"mysqlInfo"`
+	RedisInfo RedisConfig `json:"redisInfo"`
 	JwtInfo   JWTConfig   `json:"jwtInfo"`
+	WsInfo    WsConfig    `json:"wsInfo"`
 }
 
 type MysqlConfig struct {
@@ -13,6 +14,15 @@ type MysqlConfig struct {
 	Name     string `json:"name"`
 	User     string `json:"user"`
 	Password string `json:"password"`
+}
+
+type RedisConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Password string `json:"password"`
+	Username string `json:"username"`
+	Db       int    `json:"db"`
+	Expire   int    `json:"expire"`
 }
 
 type JWTConfig struct {
