@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"im/global"
+	"im/middlewares"
 	"log"
 	"net/http"
 	"sync"
@@ -15,10 +16,10 @@ type Server struct {
 	Routes map[string]HandleFunc
 	Addr   string
 
-	authentication Authentication
+	authentication authentication
 
-	ConnToUserMp map[*Conn]string
-	UserToConnMp map[string]*Conn
+	ConnToUserMp map[*Conn]int
+	UserToConnMp map[int]*Conn
 
 	Upgrader websocket.Upgrader
 }
@@ -27,15 +28,15 @@ func NewServer(addr string) *Server {
 	return &Server{
 		Routes:         make(map[string]HandleFunc),
 		Addr:           addr,
-		authentication: Authentication{},
-		ConnToUserMp:   make(map[*Conn]string),
-		UserToConnMp:   make(map[string]*Conn),
+		authentication: &Authentication{},
+		ConnToUserMp:   make(map[*Conn]int),
+		UserToConnMp:   make(map[int]*Conn),
 		Upgrader:       websocket.Upgrader{},
 	}
 }
 
-func (s *Server) AddConn(conn *Conn, r *http.Request) {
-	uid := s.authentication.GetUid(r)
+func (s *Server) AddConn(conn *Conn, claims *middlewares.CustomClaims) {
+	uid := claims.ID
 
 	s.RWMutex.Lock()
 	defer s.RWMutex.Unlock()
@@ -49,28 +50,28 @@ func (s *Server) AddConn(conn *Conn, r *http.Request) {
 	s.UserToConnMp[uid] = conn
 }
 
-func (s *Server) GetConn(uid string) *Conn {
+func (s *Server) GetConn(uid int) *Conn {
 	s.RWMutex.RLock()
 	defer s.RWMutex.RUnlock()
 
 	return s.UserToConnMp[uid]
 }
 
-func (s *Server) GetUsers(conns ...*Conn) []string {
+func (s *Server) GetUsers(conns ...*Conn) []int {
 
 	s.RWMutex.RLock()
 	defer s.RWMutex.RUnlock()
 
-	var res []string
+	var res []int
 	if len(conns) == 0 {
 		// 获取全部
-		res = make([]string, 0, len(s.ConnToUserMp))
+		res = make([]int, 0, len(s.ConnToUserMp))
 		for _, uid := range s.ConnToUserMp {
 			res = append(res, uid)
 		}
 	} else {
 		// 获取部分
-		res = make([]string, 0, len(conns))
+		res = make([]int, 0, len(conns))
 		for _, conn := range conns {
 			res = append(res, s.ConnToUserMp[conn])
 		}
@@ -85,8 +86,8 @@ func (s *Server) Close(conn *Conn) {
 	s.RWMutex.Lock()
 	defer s.RWMutex.Unlock()
 
-	uid := s.ConnToUserMp[conn]
-	if uid == "" {
+	uid, ok := s.ConnToUserMp[conn]
+	if !ok {
 		// 已经关闭了连接
 		return
 	}
@@ -97,7 +98,7 @@ func (s *Server) Close(conn *Conn) {
 	conn.Close()
 }
 
-func (s *Server) SendByUserIds(msg interface{}, userIds ...string) error {
+func (s *Server) SendByUserIds(msg interface{}, userIds ...int) error {
 	if len(userIds) == 0 {
 		return nil
 	}
@@ -148,17 +149,20 @@ func (s *Server) ServerWs(w http.ResponseWriter, r *http.Request) {
 
 	conn := NewConn(s, w, r)
 
-	if !s.authentication.Auth(w, r) {
+	claims, ok := s.authentication.Auth(w, r)
+
+	if !ok {
 
 		if err := conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("鉴权不通过"))); err != nil {
-			global.Logger["err"].Error(err.Error())
+			global.Logger["err"].Errorf(err.Error())
+			//conn.Close()
 		}
 
 		return
 	}
 
 	//记录链接
-	s.AddConn(conn, r)
+	s.AddConn(conn, claims)
 
 	go s.handlerConn(conn)
 }

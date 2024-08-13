@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"im/global"
 	"im/handler"
 	"im/initialize"
 	"im/ws"
@@ -11,15 +13,15 @@ func main() {
 
 	initialize.InitConfig()
 
-	//initialize.InitMysql()
+	initialize.InitMysql()
 
 	initialize.InitRedis()
 
-	s := ws.NewServer("127.0.0.1:1234")
+	info := global.ServerConfig
+
+	s := ws.NewServer(fmt.Sprintf("%s:%d", info.IP, info.Port))
 
 	handler.RegisterHandlers(s)
 
 	s.Start()
-
-	//select {}
 }

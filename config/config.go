@@ -1,6 +1,7 @@
 package config
 
 type ServerConfig struct {
+	IP        string      `json:"ip"`
 	Port      int         `json:"port"`
 	MysqlInfo MysqlConfig `json:"mysqlInfo"`
 	RedisInfo RedisConfig `json:"redisInfo"`
