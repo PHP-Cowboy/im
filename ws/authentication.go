@@ -1,9 +1,9 @@
 package ws
 
 import (
-	"github.com/golang-jwt/jwt"
+	"fmt"
+	"im/global"
 	"im/middlewares"
-	"math/rand"
 	"net/http"
 )
 
@@ -15,19 +15,15 @@ type Authentication struct {
 }
 
 func (*Authentication) Auth(w http.ResponseWriter, r *http.Request) (*middlewares.CustomClaims, bool) {
-	//token := r.Header.Get("token")
-	//
-	//claims, err := middlewares.Auth(token)
-	//
-	//if err != nil {
-	//	global.Logger["err"].Errorf("Token verification failed, err: %v", err.Error())
-	//	return nil, false
-	//}
+	token := r.Header.Get("token")
 
-	claims := &middlewares.CustomClaims{
-		ID:             rand.Int(),
-		Username:       "a",
-		StandardClaims: jwt.StandardClaims{},
+	fmt.Println(token)
+
+	claims, err := middlewares.Auth(token)
+
+	if err != nil {
+		global.Logger["err"].Errorf("Token verification failed, err: %v", err.Error())
+		return nil, false
 	}
 
 	return claims, true

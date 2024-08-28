@@ -8,16 +8,18 @@ const (
 )
 
 type Message struct {
-	FrameType `json:"frameType"`
-	Method    string      `json:"method"`
-	FormId    int         `json:"form_id"`
-	Data      interface{} `json:"data"`
+	FrameType  `json:"frameType"`
+	Method     string      `json:"method"`
+	FormUserId int         `json:"formUserId"`
+	ToUserId   int         `json:"toUserId"`
+	Data       interface{} `json:"data"`
 }
 
-func NewMessage(formId int, data interface{}) *Message {
+func NewMessage(formUserId, toUserId int, data interface{}) *Message {
 	return &Message{
-		FrameType: FrameData,
-		FormId:    formId,
-		Data:      data,
+		FrameType:  FrameData,
+		FormUserId: formUserId,
+		ToUserId:   toUserId,
+		Data:       data,
 	}
 }

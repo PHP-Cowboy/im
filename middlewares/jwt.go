@@ -10,8 +10,7 @@ import (
 )
 
 type CustomClaims struct {
-	ID       int
-	Username string
+	Uid int
 	jwt.StandardClaims
 }
 

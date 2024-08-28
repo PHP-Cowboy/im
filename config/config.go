@@ -3,6 +3,7 @@ package config
 type ServerConfig struct {
 	IP        string      `json:"ip"`
 	Port      int         `json:"port"`
+	PoolSize  int         `json:"poolSize"`
 	MysqlInfo MysqlConfig `json:"mysqlInfo"`
 	RedisInfo RedisConfig `json:"redisInfo"`
 	JwtInfo   JWTConfig   `json:"jwtInfo"`
@@ -27,7 +28,7 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-	SigningKey  string `json:"key"`
+	SigningKey  string `json:"signingKey"`
 	ExpiresHour int    `json:"expiresHour"`
 	AddHour     int    `json:"addHour"`
 }

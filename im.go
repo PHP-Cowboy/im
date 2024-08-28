@@ -17,6 +17,8 @@ func main() {
 
 	initialize.InitRedis()
 
+	initialize.InitGoPool()
+
 	info := global.ServerConfig
 
 	s := ws.NewServer(fmt.Sprintf("%s:%d", info.IP, info.Port))

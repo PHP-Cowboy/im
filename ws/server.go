@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
@@ -18,8 +19,8 @@ type Server struct {
 
 	authentication authentication
 
-	ConnToUserMp map[*Conn]int
-	UserToConnMp map[int]*Conn
+	RoomUserConnMp map[string]map[int]*Conn
+	UserToConnMp   map[int]*Conn
 
 	Upgrader websocket.Upgrader
 }
@@ -29,14 +30,14 @@ func NewServer(addr string) *Server {
 		Routes:         make(map[string]HandleFunc),
 		Addr:           addr,
 		authentication: &Authentication{},
-		ConnToUserMp:   make(map[*Conn]int),
+		RoomUserConnMp: make(map[string]map[int]*Conn),
 		UserToConnMp:   make(map[int]*Conn),
 		Upgrader:       websocket.Upgrader{},
 	}
 }
 
 func (s *Server) AddConn(conn *Conn, claims *middlewares.CustomClaims) {
-	uid := claims.ID
+	uid := claims.Uid
 
 	s.RWMutex.Lock()
 	defer s.RWMutex.Unlock()
@@ -46,7 +47,6 @@ func (s *Server) AddConn(conn *Conn, claims *middlewares.CustomClaims) {
 		c.Close()
 	}
 
-	s.ConnToUserMp[conn] = uid
 	s.UserToConnMp[uid] = conn
 }
 
@@ -57,27 +57,13 @@ func (s *Server) GetConn(uid int) *Conn {
 	return s.UserToConnMp[uid]
 }
 
-func (s *Server) GetUsers(conns ...*Conn) []int {
-
+func (s *Server) GetRoomUserIds(roomId string) map[int]*Conn {
 	s.RWMutex.RLock()
 	defer s.RWMutex.RUnlock()
 
-	var res []int
-	if len(conns) == 0 {
-		// 获取全部
-		res = make([]int, 0, len(s.ConnToUserMp))
-		for _, uid := range s.ConnToUserMp {
-			res = append(res, uid)
-		}
-	} else {
-		// 获取部分
-		res = make([]int, 0, len(conns))
-		for _, conn := range conns {
-			res = append(res, s.ConnToUserMp[conn])
-		}
-	}
+	userConnMp := s.RoomUserConnMp[roomId]
 
-	return res
+	return userConnMp
 }
 
 // 关闭链接
@@ -86,14 +72,18 @@ func (s *Server) Close(conn *Conn) {
 	s.RWMutex.Lock()
 	defer s.RWMutex.Unlock()
 
-	uid, ok := s.ConnToUserMp[conn]
+	userId := conn.GetUserId()
+
+	_, ok := s.UserToConnMp[userId]
 	if !ok {
 		// 已经关闭了连接
 		return
 	}
 
-	delete(s.ConnToUserMp, conn)
-	delete(s.UserToConnMp, uid)
+	roomId := conn.GetRoomId()
+
+	delete(s.RoomUserConnMp[roomId], userId)
+	delete(s.UserToConnMp, userId)
 
 	conn.Close()
 }
@@ -134,9 +124,89 @@ func (s *Server) Send(msg interface{}, conns ...*Conn) error {
 
 }
 
+func (s *Server) SendToRoom(msg interface{}, roomId string) error {
+	userConnMp, ok := s.RoomUserConnMp[roomId]
+
+	if !ok {
+		global.Logger["err"].Errorf("sendToRoom failed,err: room no user roomId %v", roomId)
+		return nil
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		global.Logger["err"].Errorf("JSON parsing failed, err: %v ", err.Error())
+		return err
+	}
+
+	var wg sync.WaitGroup
+
+	for _, conn := range userConnMp {
+		wg.Add(1)
+
+		_ = global.GoPool.Submit(func() {
+			err = conn.WriteMessage(websocket.TextMessage, data)
+
+			if err != nil {
+				global.Logger["err"].Errorf("WriteMessage failed, err: %v ", err.Error())
+			}
+
+			wg.Done()
+		})
+
+	}
+
+	wg.Wait()
+
+	return nil
+}
+
+func (s *Server) Broadcast(msg interface{}) error {
+	if len(s.UserToConnMp) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		global.Logger["err"].Errorf("JSON parsing failed, err: %v ", err.Error())
+		return err
+	}
+
+	var wg sync.WaitGroup
+
+	for _, conn := range s.UserToConnMp {
+		wg.Add(1)
+
+		_ = global.GoPool.Submit(func() {
+
+			err = conn.WriteMessage(websocket.TextMessage, data)
+
+			if err != nil {
+				global.Logger["err"].Errorf("WriteMessage failed, err: %v ", err.Error())
+			}
+
+			wg.Done()
+		})
+
+	}
+
+	wg.Wait()
+
+	return nil
+}
+
 func (s *Server) AddRoutes(rs []Route) {
 	for _, r := range rs {
 		s.Routes[r.Method] = r.Handler
+	}
+}
+
+func (s *Server) Subscribe(r *http.Request) {
+	pubsub := global.Redis.Cli.Subscribe(context.Background(), "mychannel")
+	//defer pubsub.Close()
+
+	ch := pubsub.Channel()
+	for msg := range ch {
+		fmt.Printf("Received message: %s\n", msg.Payload)
 	}
 }
 
@@ -147,9 +217,13 @@ func (s *Server) ServerWs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	conn := NewConn(s, w, r)
-
 	claims, ok := s.authentication.Auth(w, r)
+
+	if claims == nil {
+		claims = &middlewares.CustomClaims{Uid: 0}
+	}
+
+	conn := NewConn(s, w, r, claims.Uid)
 
 	if !ok {
 
@@ -161,6 +235,8 @@ func (s *Server) ServerWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.Subscribe(r)
+
 	//记录链接
 	s.AddConn(conn, claims)
 
@@ -170,6 +246,7 @@ func (s *Server) ServerWs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlerConn(conn *Conn) {
 	// 记录连接
 	for {
+
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			// 关闭并删除连接

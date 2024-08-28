@@ -1,6 +1,7 @@
 {
     "ip": "127.0.0.1",
     "port": 1234,
+    "poolSize": 5,
     "mysqlInfo": {
         "host": "127.0.0.1",
         "port": 3306,
